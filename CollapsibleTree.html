@@ -1,0 +1,193 @@
+<html>
+<head>
+<meta charset="UTF-8"/>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+<style>
+	.node {
+        cursor: pointer;
+		font: 10px sans-serif ;
+    }
+	.link {
+        fill: none;
+        stroke: #ccc;
+        stroke-width: 1.5px;
+    }
+</style>
+</head>
+<body>
+
+<script>
+var margin = {top: 20, right: 120, bottom: 20, left: 120};
+var width = 960 - margin.left - margin.right;
+var height = 960 - margin.top - margin.bottom;
+
+var duration = 750;
+var root;
+var i = 0;
+
+var svg = d3.select("body")
+			.append("svg")
+			.attr("width",width+margin.left+margin.right)
+			.attr("height",height+margin.top+margin.bottom)
+			.append("g")
+			.attr("transform","translate("+margin.left+","+margin.top+")");
+
+//声明树布局
+var tree = d3.layout.tree()
+					.size([height,width])
+					.separation((a,b) => ((a.parent==b.parent?1:2)/a.depth));
+
+//指明为横向布局	
+var diagonal = d3.svg.diagonal()
+					 .projection(d => ([d.y,d.x]));
+					 
+
+d3.json("https://raw.githubusercontent.com/d3/d3-hierarchy/v1.1.8/test/data/flare.json",function(error,flaredata){
+	if(error)
+		throw error;
+	
+	console.log(flaredata);
+	
+	//根节点和位置
+	root = flaredata;
+	root.x0 = height/2;
+	root.y0 = 0;
+	
+	//折叠根节点的每个孩子，有子孙的就把children给_children暂存
+	root.children.forEach(function collapse(d){
+		if(d.children){
+			d._children = d.children;
+			d._children.forEach(collapse);
+			d.children = null;
+		}
+	});
+	root._children = null;
+
+	update(root);	
+});
+
+//更新布局
+function update(source){
+	var nodes = tree.nodes(root).reverse();
+	var links = tree.links(nodes);
+	
+	root.x0 = 0;
+	root.y0 = 0;
+	
+	console.log(nodes);
+	console.log(links);
+	
+	//计算每层位置
+	nodes.forEach(function(d){
+		d.y = d.depth*180;
+	});
+	
+	
+	//根据id绑定节点数据
+	var node = svg.selectAll(".node")
+				    .data(nodes,function(d){
+				        if(!d.id)
+							d.id = i++;
+						return d.id;
+				    });
+					
+	//根据目标节点的id绑定连接数据
+	var link = svg.selectAll(".link")
+				  .data(links,d => d.target.id);
+				  
+	//绘制连接
+	var linkEnter = link.enter()
+						.append("path")
+						.attr("class","link")
+						.attr("d",function(d){
+							var o = {x:source.x0,y:source.y0};
+							return diagonal({source:o,target:o});
+						});
+	
+	//更新原有连接的位置
+	link.transition()
+		.duration(duration)
+		.attr("d",diagonal);
+	
+	console.log(source);
+	//将折叠的连接收缩到源点处
+	var linkExit = link.exit()
+						.transition()
+						.duration(duration)
+						.attr("d",function(d){
+							var o = {x:(source.x?source.x:0),y:source.y};
+							return diagonal({source:o,target:o});
+						})
+						.remove();
+
+	//绘制节点
+	var nodeEnter = node.enter()
+						.append("g")
+						.attr("class","node")
+						//.attr("fill-opacity",0)
+						//.attr("stroke-opacity",0)
+						.attr("transform","translate("+source.y0+","+source.x0+")")
+						.on("click",click);
+	
+	nodeEnter.append("circle")
+			 .attr("r",1e-6)
+			 .attr("fill",d => (d._children?"#555":"#999"))
+			 .attr("fill-opacity",0);
+	
+	nodeEnter.append("text")
+			 .attr("dy","0.35em")
+			 .attr("x",d => (d._children||d.children?-10:10))
+			 .attr("text-anchor",d => (d._children||d.children?"end":"start"))
+			 .text(d => d.name)
+			 .attr("fill-opacity",0);
+	
+	//将原有节点绘制到新位置
+	var nodeUpdate = node.transition()
+						 .duration(duration)
+						 .attr("transform",d => ("translate("+d.y+","+d.x+")"));
+	
+	nodeUpdate.select("circle")
+			  .attr("r",3.5)
+			  .attr("fill-opacity",1);
+	
+	nodeUpdate.select("text")
+			  .attr("fill-opacity",1);
+
+	//将折叠的子节点收回
+	var nodeExit = node.exit()
+					   .transition()
+					   .duration(duration)
+					   .attr("transform","translate("+source.y+","+source.x+")")
+					   .remove();
+	
+	nodeExit.select("circle")
+			.attr("r",1e-6)
+			.attr("fill-opacity",0);
+	
+	nodeExit.select("text")
+			.attr("fill-opacity",0);
+	
+	//记录位置，用于过渡
+	nodes.forEach(function(d){
+		d.x0 = d.x;
+		d.y0 = d.y;
+	});			
+			 
+}
+//点击节点切换收缩
+function click(d){
+	if(d.children){
+		d._children = d.children;
+		d.children = null;
+	}
+	else{
+		d.children = d._children;
+		d._children = null;
+	}
+	update(d);      //重新渲染
+}
+</script>
+</body>
+
+
+</html>
